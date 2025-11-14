@@ -1,0 +1,14 @@
+name: build
+on: [push,pull_request,workflow_dispatch]
+
+jobs:
+  clang-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Clang
+        run: sudo apt update && sudo apt install -y clang
+
+      - name: Build Datum
+        run: clang zfetch.c -Wall -Wextra -Werror -pedantic-errors -fstack-protector-all -fsanitize=undefined -fsanitize=address -Wwrite-strings -o zfetch

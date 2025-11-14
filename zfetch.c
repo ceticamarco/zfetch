@@ -198,6 +198,17 @@ static const char *logo_ubuntu[] = {
     NULL
 };
 
+static const char *logo_mint[] = {
+    C2 " __________",
+    C2 "|_          \\",
+    C2 "  |" C7" | _____" C2 " |",
+    C2 "  |" C7" | | | |" C2 " |",
+    C2 "  |" C7" | | | |" C2 " |",
+    C2 "  |" C7" \\_____/" C2 " |",
+    C2 "  \\_________/",
+    NULL
+};
+
 static const char *logo_suse[] = {
     C2 "  _______",
     C2 "__|   __ \\",
@@ -232,6 +243,7 @@ static const logo_entry_t available_logos[] = {
     { C6 "arch" RESET, logo_arch },
     { C1 "debian" RESET, logo_debian },
     { C4 "fedora" RESET, logo_fedora },
+    { C2 "mint" RESET, logo_mint },
     { C5 "gentoo" RESET, logo_gentoo },
     { C6 "artix" RESET, logo_artix },
     { C3 "linux" RESET, logo_linux },
@@ -440,6 +452,7 @@ static const char **get_logo(const char *id) {
     else if (STRCMP(id, "slackware")) { return logo_slackware; }
     else if (STRCMP(id, "alpine")) { return logo_alpine; }
     else if (STRCMP(id, "ubuntu")) { return logo_ubuntu; }
+    else if (STRCMP(id, "mint")) { return logo_mint; }
     else if (STRCMP(id, "opensuse") || STRCMP(id, "opensuse-tumbleweed") ||
              STRCMP(id, "opensuse-leap") || STRCMP(id, "sles") || 
              STRCMP(id, "suse")) { return logo_suse; }
@@ -469,7 +482,7 @@ static const char *get_logo_accent(const char **logo) {
         return C5; // Magenta
     } else if (logo == logo_linux || logo == logo_ubuntu) {
         return C3; // Yellow
-    } else if (logo == logo_suse) {
+    } else if (logo == logo_suse || logo == logo_mint) {
         return C2; // Green
     }
 
@@ -565,6 +578,35 @@ static inline void str_to_lower(char *str) {
     }
 }
 
+static inline size_t fmt_uptime(char *buf, size_t buf_size, size_t offset, uint64_t value, const char *unit) {
+    if (value == 0) {
+        return offset;
+    }
+
+    const char *sep = (offset == 0) ? "" : ", ";
+
+    if (offset >= buf_size) {
+        return offset;
+    }
+
+    int n = snprintf(buf + offset, buf_size - offset,
+                        "%s%" PRIu64 " %s%s",
+                        sep, value, unit,
+                        value == 1 ? "" : "s");
+
+    if (n < 0) {
+        return offset;
+    }
+
+    const size_t written = (size_t)n;
+
+    if (written >= buf_size - offset) {
+        return buf_size;
+    }
+
+    return offset + written;
+}
+
 /*
  * Features
  */
@@ -589,16 +631,15 @@ static void get_hostname(char *buf, size_t buf_size) {
 static void get_uptime(char *buf, size_t buf_size) {
     FILE *fp = fopen("/proc/uptime", "r");
     uint64_t total = 0;
-    uint64_t days, hours, minutes;
 
     if (fp == NULL) {
         snprintf(buf, buf_size, "unknown");
         return;
     }
 
-    // The /proc/uptime has two fields formatted as follows:
+    // The /proc/uptime file has two fields formatted as follows:
     // <uptime_in_sec>.<fraction> <idle_in_sec>.<fraction>
-    // We only read the seconds and ignore the fractional part
+    // We only read <uptime_in_sec> and ignore <fraction>
     if (fscanf(fp, "%" SCNu64, &total) != 1) {
         fclose(fp);
         snprintf(buf, buf_size, "unknown");
@@ -607,21 +648,19 @@ static void get_uptime(char *buf, size_t buf_size) {
 
     fclose(fp);
 
-    days = total / 86400ULL;
-    hours = (total % 86400ULL) / 3600ULL;
-    minutes = (total % 3600ULL) / 60ULL;
+    const uint64_t days = total / 86400ULL;
+    const uint64_t hours = (total % 86400ULL) / 3600ULL;
+    const uint64_t minutes = (total % 3600ULL) / 60ULL;
+    const uint64_t seconds = total % 60ULL;
 
-    if (days > 0) {
-        snprintf(buf, buf_size, "%" PRIu64 " day%s, %" PRIu64 " hour%s, %" PRIu64 " min",
-                 days, days == 1 ? "" : "s",
-                 hours, hours == 1 ? "" : "s",
-                 minutes);
-    } else if (hours > 0) {
-        snprintf(buf, buf_size, "%" PRIu64 " hour%s, %" PRIu64 " min",
-                 hours, hours == 1 ? "" : "s",
-                 minutes);
-    } else {
-        snprintf(buf, buf_size, "%" PRIu64 " min", minutes);
+    size_t offset = 0;
+
+    offset = fmt_uptime(buf, buf_size, offset, days, "day");
+    offset = fmt_uptime(buf, buf_size, offset, hours, "hour");
+    offset = fmt_uptime(buf, buf_size, offset, minutes, "minute");
+
+    if (offset == 0) {
+        offset = fmt_uptime(buf, buf_size, offset, seconds, "second");
     }
 }
 
@@ -709,7 +748,7 @@ static size_t get_ips(char entries[][IFACE_ENTRY_LEN], size_t max_entries) {
         char ipv4[INET_ADDRSTRLEN];
         struct sockaddr_in *sin;
 
-        // Skip loopback, disabled interfaces and non-IPV4 interfaces
+        // Skip loopback, disabled interfaces and non-IPv4 interfaces
         if (!ifa->ifa_addr) { continue; }
         if (ifa->ifa_addr->sa_family != AF_INET) { continue; }
         if (!(ifa->ifa_flags & IFF_UP)) { continue; }
@@ -767,9 +806,9 @@ static void get_options(uint16_t options, const char *config_path) {
     for (size_t idx = 0; idx < ARR_LEN(flags); idx++) {
         const bool enabled = (options & flags[idx].flag) != 0;
 
-        printf("%-11s %s%s%s\n", flags[idx].name,
+        printf("%-6s : %s%s%s\n", flags[idx].name,
                enabled ? C2 : C1,
-               enabled ? "enabled" : "disabled",
+               enabled ? "ON" : "OFF",
                RESET);
     }
 }
@@ -865,7 +904,8 @@ int main(int argc, char **argv) {
     };
     uint16_t options = 0;
     os_t os_release;
-    line_t lines[64];
+    // number of available options + max number of network interfaces
+    line_t lines[9 + IFACE_ENTRY_LEN];
     size_t line_count = 0;
     bool list_logos = false, list_opts = false;
     int opt;
