@@ -27,9 +27,6 @@ In both cases, you will get a binary file named `zfetch` that you can move where
 want.
 
 ## Usage
-As stated before, I've built zFetch to be extremely simple to use since I believe that system
-fetchers play a paramount role on providing essential data to whoever has a lot of machines to manage.
-
 In its most basic form, you can just invoke the program without any additional parameter and it will
 run with all option enabled, that is:
 
@@ -95,6 +92,7 @@ Available logos: alpine, arch, debian, fedora, mint, gentoo, artix, linux, nixos
 ```
 
 
-## License
-
-[MIT](https://choosealicense.com/licenses/mit/)
+## License & acknowledge
+This tool is distributed with the [MIT license](https://choosealicense.com/licenses/mit/), the logos were taken from
+[pfetch](https://github.com/dylanaraps/pfetch), [neofetch](https://github.com/dylanaraps/neofetch) 
+and [fastfetch](https://github.com/fastfetch-cli/fastfetch).
