@@ -27,8 +27,8 @@ In both cases, you will get a binary file named `zfetch` that you can move where
 want.
 
 ## Usage
-In its most basic form, you can just invoke the program without any additional parameter and it will
-run with all option enabled, that is:
+In its simplest form, you can just invoke the program without any additional parameter and it will
+run with all options enabled, that is:
 
 ![](imgs/ex1.png)
 
@@ -92,7 +92,7 @@ Available logos: alpine, arch, debian, fedora, mint, gentoo, artix, linux, nixos
 ```
 
 
-## License & acknowledge
-This tool is distributed with the [MIT license](https://choosealicense.com/licenses/mit/), the logos were taken from
+## License & acknowledgement
+This tool is distributed under the [MIT license](https://choosealicense.com/licenses/mit/), the logos were taken from
 [pfetch](https://github.com/dylanaraps/pfetch), [neofetch](https://github.com/dylanaraps/neofetch) 
 and [fastfetch](https://github.com/fastfetch-cli/fastfetch).
