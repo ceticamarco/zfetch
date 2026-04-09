@@ -41,15 +41,20 @@ you can do so by creating a configuration file in one of the following paths:
 Inside it, you can specify which option to enable and which one to disable:
 
 ```conf
-HOST   = 1
-OS     = 0
-UPTIME = 1
-CPU    = 1
-MEMORY = 1
-DISK   = 1
-IP     = 1
-LOGO   = 1
-BARS   = 0
+HOST     = 1
+OS       = 0
+UPTIME   = 1
+CPU      = 1
+MEMORY   = 1
+DISK     = 1
+IP       = 1
+LOGO     = 1
+BARS     = 0
+SHELL    = 1
+TERMINAL = 0
+DESKTOP  = 1
+INIT     = 1
+BATTERY  = 1
 ```
 
 Any other line will be considered invalid and silently skipped by the builtin parser.
@@ -57,15 +62,20 @@ To retrieve which options are currently enabled, you can run the program with th
 
 ```sh
 $ ./zfetch  --list-opts # or -s
-HOST   : ON
-OS     : OFF
-UPTIME : ON
-CPU    : ON
-MEMORY : ON
-DISK   : ON
-IP     : ON
-LOGO   : ON
-BARS   : OFF
+HOST     : ON
+OS       : OFF
+UPTIME   : ON
+CPU      : ON
+MEMORY   : ON
+DISK     : ON
+IP       : ON
+LOGO     : ON
+BARS     : OFF
+SHELL    : ON
+TERMINAL : OFF
+DESKTOP  : ON
+INIT     : ON
+BATTERY  : ON
 ```
 
 You can also dynamically specify a different path by using the `-c` CLI argument:
@@ -73,15 +83,20 @@ You can also dynamically specify a different path by using the `-c` CLI argument
 ```sh
 $ ./zfetch  -c $PWD/config -s
 Using custom config file: '/home/marco/Projects/zfetch/config'
-HOST   : OFF
-OS     : OFF
-UPTIME : OFF
-CPU    : OFF
-MEMORY : ON
-DISK   : ON
-IP     : ON
-LOGO   : OFF
-BARS   : ON
+HOST     : ON
+OS       : OFF
+UPTIME   : OFF
+CPU      : OFF
+MEMORY   : ON
+DISK     : ON
+IP       : ON
+LOGO     : ON
+BARS     : OFF
+SHELL    : ON
+TERMINAL : OFF
+DESKTOP  : ON
+INIT     : ON
+BATTERY  : ON
 ```
 
 Finally, you can list all supported distribution, using the `--list-logos/-a` flag:

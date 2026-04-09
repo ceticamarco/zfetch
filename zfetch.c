@@ -33,6 +33,7 @@
 #include <unistd.h>
 #include <sys/utsname.h>
 #include <sys/statvfs.h>
+#include <sys/stat.h>
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <netinet/in.h>
@@ -41,6 +42,7 @@
 #include <getopt.h>
 #include <ctype.h>
 #include <errno.h>
+#include <dirent.h>
 
 #define Z_PATH_MAX 4096
 #define IFACE_ENTRY_LEN 64
@@ -85,6 +87,11 @@
 #define OPT_IP 1U << 6
 #define OPT_LOGO 1U << 7
 #define OPT_BARS 1U << 8
+#define OPT_SHELL 1U << 9
+#define OPT_TERMINAL 1U << 0xA
+#define OPT_DESKTOP 1U << 0xB
+#define OPT_INIT 1U << 0xC
+#define OPT_BATTERY 1U << 0xD
 
 #define ARR_LEN(X) (sizeof(X) / sizeof(X[0]))
 #define STRCMP(X, Y) (strcmp(X, Y) == 0)
@@ -304,9 +311,10 @@ static void strip_quotes(char *str) {
     }
 }
 
-static uint16_t default_opts(void) {
+static inline uint16_t default_opts(void) {
     return OPT_HOST | OPT_OS | OPT_UPTIME | OPT_CPU |
-           OPT_MEMORY | OPT_DISK | OPT_IP | OPT_LOGO | OPT_BARS;
+           OPT_MEMORY | OPT_DISK | OPT_IP | OPT_LOGO | OPT_BARS |
+           OPT_SHELL | OPT_TERMINAL | OPT_DESKTOP | OPT_INIT | OPT_BATTERY;
 }
 
 static void set_option(uint16_t *options, const char *opt, int value) {
@@ -321,6 +329,11 @@ static void set_option(uint16_t *options, const char *opt, int value) {
     else if (STRCMP(opt, "IP")) { flag = OPT_IP; }
     else if (STRCMP(opt, "LOGO")) { flag = OPT_LOGO; }
     else if (STRCMP(opt, "BARS")) { flag = OPT_BARS; }
+    else if (STRCMP(opt, "SHELL")) { flag = OPT_SHELL; }
+    else if (STRCMP(opt, "TERMINAL")) { flag = OPT_TERMINAL; }
+    else if (STRCMP(opt, "DESKTOP")) { flag = OPT_DESKTOP; }
+    else if (STRCMP(opt, "INIT")) { flag = OPT_INIT; }
+    else if (STRCMP(opt, "BATTERY")) { flag = OPT_BATTERY; }
 
     if (flag == 0) { return; }
 
@@ -463,14 +476,21 @@ static const char **get_logo(const char *id) {
     return logo_linux;
 }
 
-static const char *get_percentage_color(double percent) {
+static inline const char *get_percentage_color(double percent) {
     if (percent >= 85.0) { return C1; } // Red
     else if (percent >= 60.0) { return C3; } // Yellow/orange
 
     return C2; // Green
 }
 
-static const char *get_logo_accent(const char **logo) {
+static inline const char *get_battery_color(int percent) {
+    if (percent >= 90) { return C2; } // Green
+    else if (percent >= 50) { return C3; } // Yellow/Orange
+
+    return C1; // Red
+}
+
+static inline const char *get_logo_accent(const char **logo) {
     if (logo == logo_arch || logo == logo_artix) {
         return C6; // Cyan
     } else if (logo == logo_debian || logo == logo_redhat) {
@@ -548,6 +568,35 @@ static void fmt_size(uint64_t used_kib, uint64_t total_kib, char *buf, size_t bu
              used, unit, total, unit, get_percentage_color(percent), percent, RESET);
 }
 
+static size_t fmt_uptime(char *buf, size_t buf_size, size_t offset, uint64_t value, const char *unit) {
+    if (value == 0) {
+        return offset;
+    }
+
+    const char *sep = (offset == 0) ? "" : ", ";
+
+    if (offset >= buf_size) {
+        return offset;
+    }
+
+    int n = snprintf(buf + offset, buf_size - offset,
+                        "%s%" PRIu64 " %s%s",
+                        sep, value, unit,
+                        value == 1 ? "" : "s");
+
+    if (n < 0) {
+        return offset;
+    }
+
+    const size_t written = (size_t)n;
+
+    if (written >= buf_size - offset) {
+        return buf_size;
+    }
+
+    return offset + written;
+}
+
 // Retrieve the first line of a file
 static bool get_head(const char *path, const char *prefix, char *buf, size_t buf_size) {
     FILE *fp = fopen(path, "r");
@@ -576,35 +625,6 @@ static inline void str_to_lower(char *str) {
         *str = (char)tolower((unsigned char)*str);
         str++;
     }
-}
-
-static inline size_t fmt_uptime(char *buf, size_t buf_size, size_t offset, uint64_t value, const char *unit) {
-    if (value == 0) {
-        return offset;
-    }
-
-    const char *sep = (offset == 0) ? "" : ", ";
-
-    if (offset >= buf_size) {
-        return offset;
-    }
-
-    int n = snprintf(buf + offset, buf_size - offset,
-                        "%s%" PRIu64 " %s%s",
-                        sep, value, unit,
-                        value == 1 ? "" : "s");
-
-    if (n < 0) {
-        return offset;
-    }
-
-    const size_t written = (size_t)n;
-
-    if (written >= buf_size - offset) {
-        return buf_size;
-    }
-
-    return offset + written;
 }
 
 /*
@@ -736,6 +756,170 @@ static void get_disk(char *buf, size_t buf_size) {
     fmt_size(used_kib, total_kib, buf, buf_size);
 }
 
+static void get_shell(char *buf, size_t buf_size) {
+    const char *shell = getenv("SHELL");
+    const char *base;
+
+    if (shell == NULL || *shell == '\0') {
+        snprintf(buf, buf_size, "unknown");
+        return;
+    }
+
+    // Find last slash (if available) and return 
+    // the right part only (the name)
+    base = strrchr(shell, '/');
+    snprintf(buf, buf_size, "%s", base != NULL ? base + 1 : shell);
+}
+
+static void get_terminal(char *buf, size_t buf_size) {
+    const char *term_program = getenv("TERM_PROGRAM");
+    const char *term = getenv("TERM");
+
+    if (term_program != NULL && *term_program != '\0') {
+        snprintf(buf, buf_size, "%s", term_program);
+    } else if (term != NULL && *term != '\0') {
+        snprintf(buf, buf_size, "%s", term);
+    } else {
+        snprintf(buf, buf_size, "unknown");
+    }
+}
+
+static void get_desktop(char *buf, size_t buf_size) {
+    const char *desktop = getenv("XDG_CURRENT_DESKTOP");
+    const char *session = getenv("DESKTOP_SESSION");
+    const char *wayland = getenv("WAYLAND_DISPLAY");
+    const char *display = getenv("DISPLAY");
+
+    if (desktop != NULL && *desktop != '\0') {
+        if (wayland != NULL && *wayland != '\0') {
+            snprintf(buf, buf_size, "%s (Wayland)", desktop);
+        } else if (display != NULL && *display != '\0') {
+            snprintf(buf, buf_size, "%s (X11)", desktop);
+        } else {
+            snprintf(buf, buf_size, "%s", desktop);
+        }
+        return;
+    }
+
+    if (session != NULL && *session != '\0') {
+        if (wayland != NULL && *wayland != '\0') {
+            snprintf(buf, buf_size, "%s (Wayland)", session);
+        } else if (display != NULL && *display != '\0') {
+            snprintf(buf, buf_size, "%s (X11)", session);
+        } else {
+            snprintf(buf, buf_size, "%s", session);
+        }
+        return;
+    }
+
+    if (wayland != NULL && *wayland != '\0') {
+        snprintf(buf, buf_size, "Wayland");
+    } else if (display != NULL && *display != '\0') {
+        snprintf(buf, buf_size, "X11");
+    } else {
+        snprintf(buf, buf_size, "unknown");
+    }
+}
+
+static void get_init(char *buf, size_t buf_size) {
+    struct stat st;
+    char target[Z_PATH_MAX];
+    const char *base;
+
+    if (access("/run/systemd/system", F_OK) == 0) {
+        snprintf(buf, buf_size, "systemd");
+        return;
+    }
+
+    ssize_t len = readlink("/sbin/init", target, sizeof(target) - 1);
+    if (len > 0) {
+        target[len] = '\0';
+        base = strrchr(target, '/');
+        base = base != NULL ? base + 1 : target;
+
+        if (strstr(base, "systemd") != NULL) {
+            snprintf(buf, buf_size, "systemd");
+        } else if (strstr(base, "openrc") != NULL) {
+            snprintf(buf, buf_size, "openrc");
+        } else if (strstr(base, "ruinit") != NULL) {
+            snprintf(buf, buf_size, "ruinit");
+        } else if (strstr(base, "s6") != NULL) {
+            snprintf(buf, buf_size, "s6");
+        } else if (strstr(base, "dinit") != NULL) {
+            snprintf(buf, buf_size, "dinit");
+        } else if (strstr(base, "busybox") != NULL) {
+            snprintf(buf, buf_size, "busybox init");
+        } else {
+            snprintf(buf, buf_size, "%s", base);
+        }
+        return;
+    }
+
+    if (stat("/sbin/init", &st) == 0 && S_ISREG(st.st_mode) && access("/sbin/init", X_OK) == 0) {
+        snprintf(buf, buf_size, "sysvinit");
+    } else {
+        snprintf(buf, buf_size, "unknown");
+    }
+}
+
+static bool get_battery_value(const char *name, const char *file, char *buf, size_t buf_size) {
+    char path[PATH_MAX];
+    
+    snprintf(path, sizeof(path), "/sys/class/power_supply/%s/%s", name, file);
+    FILE *fp = fopen(path, "r");
+    if (fp == NULL) {
+        return false;
+    }
+
+    if (fgets(buf, (int)buf_size, fp) == NULL) {
+        fclose(fp);
+        return false;
+    }
+
+    fclose(fp);
+    trim_whitespace(buf);
+
+    return true;
+}
+
+static void get_battery(char *buf, size_t buf_size) {
+    struct dirent *dir_entry;
+
+    DIR *dir = opendir("/sys/class/power_supply");
+    if (dir == NULL) {
+        snprintf(buf, buf_size, "unknown");
+        return;
+    }
+
+    while ((dir_entry = readdir(dir)) != NULL) {
+        char capacity[32];
+        char status[64];
+        int percent;
+
+        if (strncmp(dir_entry->d_name, "BAT", 3) != 0) {
+            continue;
+        }
+
+        if (!get_battery_value(dir_entry->d_name, "capacity", capacity, sizeof(capacity))) {
+            continue;
+        }
+
+        if (!get_battery_value(dir_entry->d_name, "status", status, sizeof(status))) {
+            snprintf(status, sizeof(status), "unknown");
+        }
+
+        percent = atoi(capacity);
+        snprintf(buf, buf_size, "%s%d%%%s [%s]",
+                 get_battery_color(percent),
+                 percent, RESET, status);
+        closedir(dir);
+        return;
+    }
+
+    closedir(dir);
+    snprintf(buf, buf_size, "unknown");
+}
+
 static size_t get_ips(char entries[][IFACE_ENTRY_LEN], size_t max_entries) {
     size_t count = 0;
     struct ifaddrs *ifa_list = NULL;
@@ -796,7 +980,12 @@ static void get_options(uint16_t options, const char *config_path) {
         { "DISK", OPT_DISK },
         { "IP", OPT_IP },
         { "LOGO", OPT_LOGO },
-        { "BARS", OPT_BARS }
+        { "BARS", OPT_BARS },
+        { "SHELL", OPT_SHELL },
+        { "TERMINAL", OPT_TERMINAL },
+        { "DESKTOP", OPT_DESKTOP },
+        { "INIT", OPT_INIT },
+        { "BATTERY", OPT_BATTERY }
     };
 
     if (config_path) {
@@ -806,7 +995,7 @@ static void get_options(uint16_t options, const char *config_path) {
     for (size_t idx = 0; idx < ARR_LEN(flags); idx++) {
         const bool enabled = (options & flags[idx].flag) != 0;
 
-        printf("%-6s : %s%s%s\n", flags[idx].name,
+        printf("%-8s : %s%s%s\n", flags[idx].name,
                enabled ? C2 : C1,
                enabled ? "ON" : "OFF",
                RESET);
@@ -998,6 +1187,36 @@ int main(int argc, char **argv) {
     if (options & OPT_DISK) {
         lines[line_count].label = "Disk:";
         get_disk(lines[line_count].value, sizeof(lines[line_count].value));
+        line_count++;
+    }
+
+    if (options & OPT_SHELL) {
+        lines[line_count].label = "Shell:";
+        get_shell(lines[line_count].value, sizeof(lines[line_count].value));
+        line_count++;
+    }
+
+    if (options & OPT_TERMINAL) {
+        lines[line_count].label = "Terminal:";
+        get_terminal(lines[line_count].value, sizeof(lines[line_count].value));
+        line_count++;
+    }
+
+    if (options & OPT_DESKTOP) {
+        lines[line_count].label = "Desktop:";
+        get_desktop(lines[line_count].value, sizeof(lines[line_count].value));
+        line_count++;
+    }
+
+    if (options & OPT_INIT) {
+        lines[line_count].label = "Init:";
+        get_init(lines[line_count].value, sizeof(lines[line_count].value));
+        line_count++;
+    }
+
+    if (options & OPT_BATTERY) {
+        lines[line_count].label = "Battery:";
+        get_battery(lines[line_count].value, sizeof(lines[line_count].value));
         line_count++;
     }
 
