@@ -38,7 +38,7 @@ you can do so by creating a configuration file in one of the following paths:
 - `$HOME/.zfetch.conf`;  
 - `$HOME/.config/zfetch/conf` (**this takes precedence**).
 
-Inside it, you can specify which option to enable and which one to disable:
+Inside it, you can specify which options to enable and which one to disable:
 
 ```conf
 HOST     = 1

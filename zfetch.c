@@ -702,7 +702,6 @@ static void get_ram(char *buf, size_t buf_size) {
     char key[64];
     unsigned long long value;
     unsigned long long total = 0, available = 0;
-    bool mem_available = false;
 
     if (fp == NULL) {
         snprintf(buf, buf_size, "unknown");
@@ -719,7 +718,6 @@ static void get_ram(char *buf, size_t buf_size) {
                 total = value;
             } else if (STRCMP(key, "MemAvailable:")) {
                 available = value;
-                mem_available = true;
             }
         }
 
@@ -727,12 +725,12 @@ static void get_ram(char *buf, size_t buf_size) {
         int ch;
         while ((ch = fgetc(fp)) != '\n' && ch != EOF) { }
 
-        if (total != 0 && mem_available) { break; }
+        if (total != 0 && available != 0) { break; }
     }
 
     fclose(fp);
 
-    if (total == 0 || !mem_available) {
+    if (total == 0 || available == 0) {
         snprintf(buf, buf_size, "unknown");
         return;
     }
@@ -841,8 +839,8 @@ static void get_init(char *buf, size_t buf_size) {
             snprintf(buf, buf_size, "systemd");
         } else if (strstr(base, "openrc") != NULL) {
             snprintf(buf, buf_size, "openrc");
-        } else if (strstr(base, "ruinit") != NULL) {
-            snprintf(buf, buf_size, "ruinit");
+        } else if (strstr(base, "runit") != NULL) {
+            snprintf(buf, buf_size, "runit");
         } else if (strstr(base, "s6") != NULL) {
             snprintf(buf, buf_size, "s6");
         } else if (strstr(base, "dinit") != NULL) {
@@ -850,7 +848,7 @@ static void get_init(char *buf, size_t buf_size) {
         } else if (strstr(base, "busybox") != NULL) {
             snprintf(buf, buf_size, "busybox init");
         } else {
-            snprintf(buf, buf_size, "%s", base);
+            snprintf(buf, buf_size, "%.*s", (int)(buf_size - 1), base);
         }
         return;
     }
@@ -863,7 +861,7 @@ static void get_init(char *buf, size_t buf_size) {
 }
 
 static bool get_battery_value(const char *name, const char *file, char *buf, size_t buf_size) {
-    char path[PATH_MAX];
+    char path[Z_PATH_MAX];
     
     snprintf(path, sizeof(path), "/sys/class/power_supply/%s/%s", name, file);
     FILE *fp = fopen(path, "r");
@@ -895,23 +893,24 @@ static void get_battery(char *buf, size_t buf_size) {
         char capacity[32];
         char status[64];
         int percent;
+        const char *battery_name = dir_entry->d_name;
 
-        if (strncmp(dir_entry->d_name, "BAT", 3) != 0) {
+        if (strncmp(battery_name, "BAT", 3) != 0) {
             continue;
         }
 
-        if (!get_battery_value(dir_entry->d_name, "capacity", capacity, sizeof(capacity))) {
+        if (!get_battery_value(battery_name, "capacity", capacity, sizeof(capacity))) {
             continue;
         }
 
-        if (!get_battery_value(dir_entry->d_name, "status", status, sizeof(status))) {
+        if (!get_battery_value(battery_name, "status", status, sizeof(status))) {
             snprintf(status, sizeof(status), "unknown");
         }
 
         percent = atoi(capacity);
-        snprintf(buf, buf_size, "%s%d%%%s [%s]",
+        snprintf(buf, buf_size, "%s%d%%%s (%s, %s)",
                  get_battery_color(percent),
-                 percent, RESET, status);
+                 percent, RESET, battery_name, status);
         closedir(dir);
         return;
     }
