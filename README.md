@@ -3,7 +3,7 @@
     <img src="imgs/preview.gif">
     <h6><i>Lightweight system information fetcher for Linux.</i></h6>
 
-![](https://git.marcocetica.com/marco/zfetch/actions/workflows/build.yml/badge.svg)
+![](https://github.com/ceticamarco/zfetch/actions/workflows/build.yml/badge.svg)
 ![Static Badge](https://img.shields.io/badge/license-MIT-blue)
 </div>
 
